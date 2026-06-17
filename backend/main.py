@@ -88,9 +88,9 @@ app.add_middleware(
 # Pydantic Models
 # ---------------------------------------------------------------------------
 
-class VideoPayload(BaseModel):
-    video_b64: str          # Base64-encoded video file
-    mime_type: str = "video/webm"   # e.g. video/webm, video/mp4
+class AudioPayload(BaseModel):
+    audio_b64: str          # Base64-encoded audio file
+    mime_type: str = "audio/webm"   # e.g. audio/webm, audio/mp4, audio/wav
     image_b64: Optional[str] = None # Base64-encoded screenshot
 
 class VisionPayload(BaseModel):
@@ -131,7 +131,6 @@ def insert_stash_item(db: Client, row: dict) -> dict:
 def upload_image_to_supabase(db_client: Client, base64_string: str, mime_type: str = "image/jpeg") -> str:
     """Uploads a base64 encoded image to Supabase storage and returns the public URL."""
     try:
-        # STRIP THE PREFIX IF IT EXISTS
         clean_b64 = base64_string
         if "," in clean_b64:
             clean_b64 = clean_b64.split(",")[1]
@@ -164,35 +163,27 @@ async def health_check():
 
 
 @app.post("/api/video")
-async def process_video(payload: VideoPayload):
+async def process_audio(payload: AudioPayload):
     """
-    Accept a Base64 video string, send it to Gemini for product extraction.
-    Features Google Lens fallback and SerpApi Shopping + Web results.
+    Accept a Base64 audio string, send it to Gemini for product extraction,
+    and insert the result into stash_items with type='audio'.
     """
     db = get_supabase()
     get_gemini()
     model = genai.GenerativeModel('gemini-3.1-flash-lite')
 
     try:
-        video_bytes = base64.b64decode(payload.video_b64)
+        audio_bytes = base64.b64decode(payload.audio_b64)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid Base64 video data.")
+        raise HTTPException(status_code=400, detail="Invalid Base64 audio data.")
 
-    uploaded_image_url = None
-    if payload.image_b64:
-        print("\n📸 Uploading attached screenshot to Supabase Storage...")
-        try:
-            uploaded_image_url = upload_image_to_supabase(db, payload.image_b64, "image/jpeg")
-        except Exception as e:
-            print(f"⚠️ Failed to upload image: {e}")
-
-    print("\n🎧 Sending video payload to Gemini...")
+    print("\n🎧 Sending audio payload to Gemini...")
 
     prompt = """
-    Watch this 15-second video clip.
-    1. Transcribe the main content of the video.
-    2. Identify any specific product, item, or software mentioned or shown.
-    3. Identify the brand if mentioned or shown.
+    Listen to this 15-second audio clip.
+    1. Transcribe the main content of the audio.
+    2. Identify any specific product, item, or software mentioned.
+    3. Identify the brand if mentioned.
     4. Identify the price if mentioned (return as a number, or null if not mentioned).
     5. Categorize the product into EXACTLY ONE of the following 10 master categories:
        - Electronics & Tech
@@ -206,10 +197,10 @@ async def process_video(payload: VideoPayload):
        - Groceries & Consumables
        - Miscellaneous
 
-    CRITICAL RULE: If the video contains no human speech or identifiable products, or is just static/background noise, you MUST output "SILENCE_DETECTED" for the transcription, and null for the product, brand, price, and "Miscellaneous" for item_set. DO NOT invent a product.
+    CRITICAL RULE: If the audio is completely silent, contains no human speech, or is just static/background noise, you MUST output "SILENCE_DETECTED" for the transcription, and null for the product, brand, and price. DO NOT invent a product.
 
     You MUST respond with a single JSON object.
-    You MUST use exactly these five keys:
+    You MUST use exactly these four keys:
     {
         "transcription": "string",
         "product_name": "string" or null,
@@ -221,7 +212,7 @@ async def process_video(payload: VideoPayload):
 
     try:
         response = model.generate_content(
-            [prompt, {"mime_type": payload.mime_type, "data": video_bytes}],
+            [prompt, {"mime_type": payload.mime_type, "data": audio_bytes}],
             generation_config={"response_mime_type": "application/json"}
         )
         extracted = json.loads(response.text)
@@ -240,15 +231,19 @@ async def process_video(payload: VideoPayload):
     is_valid_product = (
         product_name and 
         str(product_name).strip().lower() not in ["none", "null", ""] and
+        brand and
+        str(brand).strip().lower() not in ["none", "null", ""] and
         str(transcription).strip() != "SILENCE_DETECTED"
     )
 
     search_query = None
+    uploaded_image_url = None
     if is_valid_product:
         search_query = f"{brand} {product_name}".strip()
-    elif payload.image_b64 and uploaded_image_url:
+    elif payload.image_b64:
         print("🔍 Gemini failed to extract product name. Triggering Google Lens fallback...")
         try:
+            uploaded_image_url = upload_image_to_supabase(db, payload.image_b64, "image/jpeg")
             if uploaded_image_url:
                 lens_params = {
                     "engine": "google_lens",
@@ -259,7 +254,7 @@ async def process_video(payload: VideoPayload):
                     "gl": "in",
                     "location": "India"
                 }
-                res = requests.get("[https://serpapi.com/search](https://serpapi.com/search)", params=lens_params, timeout=45)
+                res = requests.get("https://serpapi.com/search", params=lens_params, timeout=45)
                 res.raise_for_status()
                 lens_data = res.json()
                 
@@ -279,16 +274,11 @@ async def process_video(payload: VideoPayload):
                     {json.dumps(candidates, indent=2)}
                     """
                     
-                    # Strip prefix safely before passing fallback image to Gemini
-                    clean_fallback_b64 = payload.image_b64
-                    if "," in clean_fallback_b64:
-                        clean_fallback_b64 = clean_fallback_b64.split(",")[1]
-                    fallback_image_bytes = base64.b64decode(clean_fallback_b64)
-                    
+                    image_bytes = base64.b64decode(payload.image_b64)
                     print("🤖 Asking Gemini to extract a precise product name from Lens data...")
                     try:
                         filter_resp = model.generate_content(
-                            [lens_prompt, {"mime_type": "image/jpeg", "data": fallback_image_bytes}]
+                            [lens_prompt, {"mime_type": "image/jpeg", "data": image_bytes}]
                         )
                         fallback_product = filter_resp.text.strip()
                         if fallback_product:
@@ -312,7 +302,7 @@ async def process_video(payload: VideoPayload):
                 "gl": "in",
                 "location": "India"
             }
-            res = requests.get("[https://serpapi.com/search](https://serpapi.com/search)", params=shopping_params, timeout=45)
+            res = requests.get("https://serpapi.com/search", params=shopping_params, timeout=45)
             res.raise_for_status()
             shopping_data = res.json()
             
@@ -344,7 +334,7 @@ async def process_video(payload: VideoPayload):
                 "gl": "in",
                 "location": "India"
             }
-            res_web = requests.get("[https://serpapi.com/search](https://serpapi.com/search)", params=web_params, timeout=45)
+            res_web = requests.get("https://serpapi.com/search", params=web_params, timeout=45)
             res_web.raise_for_status()
             web_data = res_web.json()
             
@@ -361,11 +351,6 @@ async def process_video(payload: VideoPayload):
     extracted["deals"] = deals_list
     extracted["web_results"] = web_results
 
-    # Prioritize the uploaded screenshot over SerpApi thumbnail
-    final_image_url = uploaded_image_url
-    if not final_image_url and deals_list and deals_list[0].get("thumbnail"):
-        final_image_url = deals_list[0].get("thumbnail")
-
     row = {
         "type": "video",
         "product_name": extracted.get("product_name"),
@@ -375,7 +360,7 @@ async def process_video(payload: VideoPayload):
         "url": None,
         "discount_active": False,
         "deals": deals_list if deals_list else None,
-        "image_url": final_image_url
+        "image_url": uploaded_image_url if uploaded_image_url else (deals_list[0].get("thumbnail") if deals_list and deals_list[0].get("thumbnail") else None)
     }
 
     try:
