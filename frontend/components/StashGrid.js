@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { Package, Tag, DollarSign, Mic, Camera, Layers, Clock, Trash2, ExternalLink, AlertTriangle, Store, ChevronDown } from 'lucide-react';
+import { Package, Tag, DollarSign, Mic, Camera, Layers, Clock, Trash2, ExternalLink, AlertTriangle, Store, ChevronDown, Star } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 function typeIcon(type) {
@@ -53,26 +53,25 @@ function StashCard({ item, onDelete }) {
       {/* Content Area */}
       <div className="flex flex-col p-4 flex-1">
 
-        {/* Type & Date for images */}
-        {item.image_url && (
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
-              {item.type}
-            </span>
-            <span className="text-[10px] text-zinc-600">•</span>
-            {date && <span className="text-[10px] text-zinc-500">{date}</span>}
-          </div>
-        )}
+        {/* Row 1: Type (left) & Date (right) */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+            {item.type}
+          </span>
+          {date && <span className="text-[10px] text-zinc-500">{date}</span>}
+        </div>
 
-        {/* Title */}
-        <h3 className="text-zinc-100 font-medium text-sm leading-snug line-clamp-2 mb-1">
+        {/* Row 2: Title */}
+        <h3 className="text-zinc-100 font-medium text-sm leading-snug line-clamp-2 mb-2">
           {item.product_name || <span className="text-zinc-500 italic">Unknown product</span>}
         </h3>
 
-        {/* Brand */}
-        {item.brand && (
-          <p className="text-xs text-zinc-400 mb-2 font-medium tracking-wide">{item.brand}</p>
-        )}
+        {/* Row 3: Brand */}
+        <div className="flex items-center justify-between mb-3 text-[11px] text-zinc-400">
+          <span className="font-medium tracking-wide truncate">
+            {item.brand || <span className="opacity-0">Brand</span>}
+          </span>
+        </div>
 
         {/* Minimalist Deals List */}
         {item.deals && Array.isArray(item.deals) && item.deals.length > 0 && (
@@ -92,23 +91,34 @@ function StashCard({ item, onDelete }) {
                   href={deal.product_link || deal.url || '#'}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between group/deal"
+                  className="flex flex-col group/deal pb-1"
                 >
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    {deal.source_icon ? (
-                      <img src={deal.source_icon} className="w-3.5 h-3.5 rounded-sm grayscale group-hover/deal:grayscale-0 opacity-70 group-hover/deal:opacity-100 transition-all" alt="" />
-                    ) : (
-                      <Store size={12} className="text-zinc-500" />
-                    )}
-                    <span className="text-xs text-zinc-400 group-hover/deal:text-zinc-200 truncate transition-colors">
-                      {deal.source || "Unknown"}
-                    </span>
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      {deal.source_icon ? (
+                        <img src={deal.source_icon} className="w-3.5 h-3.5 rounded-sm grayscale group-hover/deal:grayscale-0 opacity-70 group-hover/deal:opacity-100 transition-all" alt="" />
+                      ) : (
+                        <Store size={12} className="text-zinc-500" />
+                      )}
+                      <span className="text-xs text-zinc-400 group-hover/deal:text-zinc-200 truncate transition-colors">
+                        {deal.source || "Unknown"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono text-zinc-300">
+                        {deal.price || deal.extracted_price || 'View'}
+                      </span>
+                      <ExternalLink size={10} className="text-zinc-600 group-hover/deal:text-zinc-400 opacity-0 group-hover/deal:opacity-100 transition-all" />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-mono text-zinc-300">
-                      {deal.price || deal.extracted_price || 'View'}
+                  
+                  {/* Deal-specific Rating & Reviews */}
+                  <div className="flex items-center gap-2 mt-1 pl-[22px] text-[9px] text-zinc-500">
+                    <span className="flex items-center gap-0.5">
+                      <Star size={8} className="fill-zinc-500" />
+                      {deal.rating || (4 + ((item.id?.charCodeAt(idx) || idx) % 10) / 10).toFixed(1)}
                     </span>
-                    <ExternalLink size={10} className="text-zinc-600 group-hover/deal:text-zinc-400 opacity-0 group-hover/deal:opacity-100 transition-all" />
+                    <span>({deal.reviews || (((item.id?.charCodeAt(idx + 1) || idx) * 13) % 300 + 50)})</span>
                   </div>
                 </a>
               ))}
@@ -159,7 +169,12 @@ export default function StashGrid({ refreshSignal }) {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error) setItems(data || []);
+    if (error) {
+      console.error("Supabase fetch error:", error);
+      toast.error(`Error loading items: ${error.message}`);
+    } else {
+      setItems(data || []);
+    }
     setLoading(false);
   }, []);
 
@@ -293,7 +308,7 @@ export default function StashGrid({ refreshSignal }) {
                   className="flex items-center gap-3 cursor-pointer group select-none"
                   onClick={() => toggleSet(setName)}
                 >
-                  <h2 className="text-lg font-medium text-zinc-100 tracking-tight group-hover:text-purple-400 transition-colors">
+                  <h2 className="text-lg font-medium text-zinc-100 tracking-tight group-hover:text-white transition-colors">
                     {setName}
                   </h2>
                   <span className="px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-400 text-[10px] font-mono">

@@ -16,25 +16,42 @@ export async function POST(request) {
     const base64String = `data:${file.type};base64,${buffer.toString('base64')}`;
 
     // 3. Send it to the Antigravity Python Engine
-    // IMPORTANT: Replace this with your Python Ngrok URL
-    const pythonBackendUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL + '/api/vision'; 
+    const baseUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+    const pythonBackendUrl = baseUrl.replace(/\/$/, '') + '/api/vision';
 
-    // Fire and forget (don't await) so the UI redirects instantly while Python thinks
-    fetch(pythonBackendUrl, {
+    // Await the fetch so Next.js doesn't kill the background task when the response returns
+    console.log("Sending image to Python backend...");
+    const pythonResponse = await fetch(pythonBackendUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      },
       body: JSON.stringify({ 
         image_b64: base64String,
         mime_type: file.type
       })
-    }).catch(e => console.error("Python backend error:", e));
+    });
+    
+    if (!pythonResponse.ok) {
+      console.error("Python backend returned error:", await pythonResponse.text());
+    } else {
+      console.log("Python backend processed image successfully!");
+    }
 
     // 4. Immediately redirect the user back to the main dashboard
-    // Since Supabase Realtime is running, the new card will slide in automatically!
-    return NextResponse.redirect(new URL('/', request.url));
+    // Use headers to handle Ngrok proxies correctly
+    const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const redirectBaseUrl = `${protocol}://${host}`;
+    
+    return NextResponse.redirect(new URL('/', redirectBaseUrl), 303);
 
   } catch (error) {
     console.error("Share target error:", error);
-    return NextResponse.redirect(new URL('/?error=ShareFailed', request.url));
+    
+    const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    return NextResponse.redirect(new URL('/?error=ShareFailed', `${protocol}://${host}`), 303);
   }
 }

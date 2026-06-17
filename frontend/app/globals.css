@@ -9,11 +9,31 @@
 }
 
 body {
-  font-family: var(--font-inter), system-ui, sans-serif;
-  background: #0a0a0f;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  background: #09090B;
   color: #ffffff;
   -webkit-font-smoothing: antialiased;
 }
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+.animate-delay-100 { animation-delay: 100ms; }
+.animate-delay-200 { animation-delay: 200ms; }
+.animate-delay-300 { animation-delay: 300ms; }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 6px; }
