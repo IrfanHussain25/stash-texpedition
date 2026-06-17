@@ -4,9 +4,7 @@ import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { ImageUp, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_PYTHON_API_URL 
-  ? process.env.NEXT_PUBLIC_PYTHON_API_URL.replace(/\/$/, '') 
-  : process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function UploadZone({ onInserted }) {
   const [status, setStatus] = useState('idle'); // idle | uploading | success | error
@@ -28,8 +26,7 @@ export default function UploadZone({ onInserted }) {
       const res = await fetch(`${API_URL}/api/vision`, {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           image_b64: base64,

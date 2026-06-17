@@ -16,8 +16,8 @@ export async function POST(request) {
     const base64String = `data:${file.type};base64,${buffer.toString('base64')}`;
 
     // 3. Send it to the Antigravity Python Engine
-    const baseUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-    const pythonBackendUrl = baseUrl.replace(/\/$/, '') + '/api/vision';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+    const pythonBackendUrl = baseUrl + '/api/vision';
 
     // Await the fetch so Next.js doesn't kill the background task when the response returns
     console.log("Sending image to Python backend...");

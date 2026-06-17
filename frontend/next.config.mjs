@@ -19,7 +19,8 @@ const nextConfig = {
     "0239-2405-201-8013-923e-8194-1e47-a37e-2647.ngrok-free.app",
     "*.ngrok-free.app",
     "*.ngrok.io",
-    "*.ngrok.app"
+    "*.ngrok.app",
+    "http://http://13.207.27.168"
   ],
   // This explicitly silences the Next 16 Turbopack error
   turbopack: {}
