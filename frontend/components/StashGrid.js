@@ -137,7 +137,7 @@ function StashCard({ item, onDelete }) {
 export default function StashGrid({ refreshSignal }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState('recent');
   const [itemToDelete, setItemToDelete] = useState(null);
   const [collapsedSets, setCollapsedSets] = useState(new Set());
 
