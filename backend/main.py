@@ -87,14 +87,10 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Pydantic Models
 # ---------------------------------------------------------------------------
-class TestInsertPayload(BaseModel):
-    type: str
-    product_name: str
-    price: float
 
-class AudioPayload(BaseModel):
-    audio_b64: str          # Base64-encoded audio file
-    mime_type: str = "audio/webm"   # e.g. audio/webm, audio/mp4, audio/wav
+class VideoPayload(BaseModel):
+    video_b64: str          # Base64-encoded video file
+    mime_type: str = "video/webm"   # e.g. video/webm, video/mp4
     image_b64: Optional[str] = None # Base64-encoded screenshot
 
 class VisionPayload(BaseModel):
@@ -166,25 +162,11 @@ async def health_check():
         "ai": "ready" if gemini_model else "not configured",
     }
 
-@app.post("/api/test-insert")
-async def test_insert(payload: TestInsertPayload):
-    """Insert a mock row into stash_items to verify DB connectivity."""
-    db = get_supabase()
-    try:
-        row = {
-            "type": payload.type,
-            "product_name": payload.product_name,
-            "price": payload.price,
-        }
-        data = insert_stash_item(db, row)
-        return {"status": "success", "message": "Row inserted into stash_items", "data": data}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 
-@app.post("/api/audio")
-async def process_audio(payload: AudioPayload):
+@app.post("/api/video")
+async def process_video(payload: VideoPayload):
     """
-    Accept a Base64 audio string, send it to Gemini for product extraction.
+    Accept a Base64 video string, send it to Gemini for product extraction.
     Features Google Lens fallback and SerpApi Shopping + Web results.
     """
     db = get_supabase()
@@ -192,9 +174,9 @@ async def process_audio(payload: AudioPayload):
     model = genai.GenerativeModel('gemini-3.1-flash-lite')
 
     try:
-        audio_bytes = base64.b64decode(payload.audio_b64)
+        video_bytes = base64.b64decode(payload.video_b64)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid Base64 audio data.")
+        raise HTTPException(status_code=400, detail="Invalid Base64 video data.")
 
     uploaded_image_url = None
     if payload.image_b64:
@@ -204,30 +186,42 @@ async def process_audio(payload: AudioPayload):
         except Exception as e:
             print(f"⚠️ Failed to upload image: {e}")
 
-    print("\n🎧 Sending audio payload to Gemini...")
+    print("\n🎧 Sending video payload to Gemini...")
 
     prompt = """
-    Listen to this 15-second audio clip.
-    1. Transcribe the main content of the audio.
-    2. Identify any specific product, item, or software mentioned.
-    3. Identify the brand if mentioned.
+    Watch this 15-second video clip.
+    1. Transcribe the main content of the video.
+    2. Identify any specific product, item, or software mentioned or shown.
+    3. Identify the brand if mentioned or shown.
     4. Identify the price if mentioned (return as a number, or null if not mentioned).
+    5. Categorize the product into EXACTLY ONE of the following 10 master categories:
+       - Electronics & Tech
+       - Clothing & Apparel
+       - Footwear
+       - Home & Kitchen
+       - Beauty & Wellness
+       - Sports & Outdoors
+       - Books & Media
+       - Toys & Games
+       - Groceries & Consumables
+       - Miscellaneous
 
-    CRITICAL RULE: If the audio is completely silent, contains no human speech, or is just static/background noise, you MUST output "SILENCE_DETECTED" for the transcription, and null for the product, brand, and price. DO NOT invent a product.
+    CRITICAL RULE: If the video contains no human speech or identifiable products, or is just static/background noise, you MUST output "SILENCE_DETECTED" for the transcription, and null for the product, brand, price, and "Miscellaneous" for item_set. DO NOT invent a product.
 
     You MUST respond with a single JSON object.
-    You MUST use exactly these four keys:
+    You MUST use exactly these five keys:
     {
         "transcription": "string",
         "product_name": "string" or null,
         "brand": "string" or null,
-        "price": number or null
+        "price": number or null,
+        "item_set": "string"
     }
     """
 
     try:
         response = model.generate_content(
-            [prompt, {"mime_type": payload.mime_type, "data": audio_bytes}],
+            [prompt, {"mime_type": payload.mime_type, "data": video_bytes}],
             generation_config={"response_mime_type": "application/json"}
         )
         extracted = json.loads(response.text)
@@ -373,10 +367,11 @@ async def process_audio(payload: AudioPayload):
         final_image_url = deals_list[0].get("thumbnail")
 
     row = {
-        "type": "audio",
+        "type": "video",
         "product_name": extracted.get("product_name"),
         "brand": extracted.get("brand"),
         "price": extracted.get("price"),
+        "item_set": extracted.get("item_set", "Miscellaneous"),
         "url": None,
         "discount_active": False,
         "deals": deals_list if deals_list else None,
@@ -453,6 +448,40 @@ async def process_vision_lens_to_shopping(payload: VisionPayload):
     search_query = f"{lens_brand} {lens_title}".strip()
     print(f"🎯 Target Product Found: '{search_query}'")
 
+    print("🤖 Classifying product into Master Category...")
+    category_prompt = f"""
+    Categorize the following product into EXACTLY ONE of these 10 master categories:
+    - Electronics & Tech
+    - Clothing & Apparel
+    - Footwear
+    - Home & Kitchen
+    - Beauty & Wellness
+    - Sports & Outdoors
+    - Books & Media
+    - Toys & Games
+    - Groceries & Consumables
+    - Miscellaneous
+    
+    Product: {search_query}
+    
+    Return ONLY the exact string of the category. No JSON, no markdown, just the string.
+    """
+    
+    try:
+        model = get_gemini()
+        cat_resp = model.generate_content([category_prompt])
+        item_set = cat_resp.text.strip()
+        valid_cats = [
+            "Electronics & Tech", "Clothing & Apparel", "Footwear", 
+            "Home & Kitchen", "Beauty & Wellness", "Sports & Outdoors", 
+            "Books & Media", "Toys & Games", "Groceries & Consumables", "Miscellaneous"
+        ]
+        if item_set not in valid_cats:
+            item_set = "Miscellaneous"
+    except Exception as exc:
+        print(f"⚠️ Categorization failed: {exc}")
+        item_set = "Miscellaneous"
+
     # =======================================================================
     # STEP 2: USE GOOGLE SHOPPING TO GET DEEP METRICS & LIVE DEALS
     # =======================================================================
@@ -528,6 +557,7 @@ async def process_vision_lens_to_shopping(payload: VisionPayload):
         "product_name": lens_title if lens_title else search_query,
         "brand": lens_brand,
         "price": deals_list[0].get("extracted_price") if (deals_list and deals_list[0].get("extracted_price")) else None,
+        "item_set": item_set,
         "url": None,
         "discount_active": False,
         "deals": deals_list,

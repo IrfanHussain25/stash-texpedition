@@ -2,12 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { Package, Tag, DollarSign, Mic, Camera, Layers, Clock, Trash2, ExternalLink, AlertTriangle, Store } from 'lucide-react';
+import { Package, Tag, DollarSign, Mic, Camera, Layers, Clock, Trash2, ExternalLink, AlertTriangle, Store, ChevronDown } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 function typeIcon(type) {
   switch (type) {
-    case 'audio': return <Mic size={14} className="text-zinc-400" />;
+    case 'video': return <Mic size={14} className="text-zinc-400" />;
     case 'screenshot': return <Camera size={14} className="text-zinc-400" />;
     default: return <Layers size={14} className="text-zinc-400" />;
   }
@@ -139,6 +139,19 @@ export default function StashGrid({ refreshSignal }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [itemToDelete, setItemToDelete] = useState(null);
+  const [collapsedSets, setCollapsedSets] = useState(new Set());
+
+  const toggleSet = (setName) => {
+    setCollapsedSets((prev) => {
+      const next = new Set(prev);
+      if (next.has(setName)) {
+        next.delete(setName);
+      } else {
+        next.add(setName);
+      }
+      return next;
+    });
+  };
 
   const fetchItems = useCallback(async () => {
     const { data, error } = await supabase
@@ -200,7 +213,21 @@ export default function StashGrid({ refreshSignal }) {
     }
   };
 
-  const filteredItems = items.filter(item => activeTab === 'all' || item.type === activeTab);
+  let displayedItems = [];
+  if (activeTab === 'recent') {
+    displayedItems = items.slice(0, 5);
+  } else {
+    displayedItems = items.filter(item => activeTab === 'all' || item.type === activeTab);
+  }
+
+  const groupedItems = activeTab !== 'recent' ? displayedItems.reduce((acc, item) => {
+    const set = item.item_set || 'Miscellaneous';
+    if (!acc[set]) acc[set] = [];
+    acc[set].push(item);
+    return acc;
+  }, {}) : {};
+
+  const sortedSetNames = Object.keys(groupedItems).sort();
 
   if (loading) {
     return (
@@ -217,6 +244,12 @@ export default function StashGrid({ refreshSignal }) {
       {/* Minimalist Tabs */}
       <div className="flex items-center gap-6 border-b border-zinc-800/50 pb-3">
         <button
+          onClick={() => setActiveTab('recent')}
+          className={`text-sm pb-3 -mb-[13px] transition-colors border-b-2 ${activeTab === 'recent' ? 'text-zinc-100 border-zinc-100 font-medium' : 'text-zinc-500 border-transparent hover:text-zinc-300'}`}
+        >
+          Recent
+        </button>
+        <button
           onClick={() => setActiveTab('all')}
           className={`text-sm pb-3 -mb-[13px] transition-colors border-b-2 ${activeTab === 'all' ? 'text-zinc-100 border-zinc-100 font-medium' : 'text-zinc-500 border-transparent hover:text-zinc-300'}`}
         >
@@ -229,24 +262,59 @@ export default function StashGrid({ refreshSignal }) {
           Screenshots
         </button>
         <button
-          onClick={() => setActiveTab('audio')}
-          className={`text-sm pb-3 -mb-[13px] transition-colors border-b-2 ${activeTab === 'audio' ? 'text-zinc-100 border-zinc-100 font-medium' : 'text-zinc-500 border-transparent hover:text-zinc-300'}`}
+          onClick={() => setActiveTab('video')}
+          className={`text-sm pb-3 -mb-[13px] transition-colors border-b-2 ${activeTab === 'video' ? 'text-zinc-100 border-zinc-100 font-medium' : 'text-zinc-500 border-transparent hover:text-zinc-300'}`}
         >
-          Audio
+          Videos
         </button>
       </div>
 
       {/* Grid Content */}
-      {filteredItems.length === 0 ? (
+      {displayedItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-24 text-zinc-600">
           <Layers size={32} strokeWidth={1} />
           <p className="text-sm font-medium text-zinc-500">No items found</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {filteredItems.map((item) => (
+      ) : activeTab === 'recent' ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mt-2">
+          {displayedItems.map((item) => (
             <StashCard key={item.id} item={item} onDelete={(id) => setItemToDelete(id)} />
           ))}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-10">
+          {sortedSetNames.map((setName) => {
+            const isCollapsed = collapsedSets.has(setName);
+            const itemsInSet = groupedItems[setName];
+            return (
+              <div key={setName} className="flex flex-col gap-4">
+                {/* Accordion Header */}
+                <div 
+                  className="flex items-center gap-3 cursor-pointer group select-none"
+                  onClick={() => toggleSet(setName)}
+                >
+                  <h2 className="text-lg font-medium text-zinc-100 tracking-tight group-hover:text-purple-400 transition-colors">
+                    {setName}
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-400 text-[10px] font-mono">
+                    {itemsInSet.length}
+                  </span>
+                  <ChevronDown 
+                    size={16} 
+                    className={`text-zinc-500 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`} 
+                  />
+                  <div className="flex-1 h-px bg-zinc-800/40 ml-2" />
+                </div>
+                
+                {/* Accordion Body */}
+                <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 transition-all duration-300 ${isCollapsed ? 'hidden' : 'block'}`}>
+                  {itemsInSet.map((item) => (
+                    <StashCard key={item.id} item={item} onDelete={(id) => setItemToDelete(id)} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
