@@ -7,7 +7,7 @@ Our backend and PWA share target are now fully functional. Users can capture pro
 
 ## Phase 1: Home Page (Landing & Omnichannel Guide)
 - [ ] **Refactor the Installation Guide Window:** The current terminal window only explains the Chrome Extension. Refactor this into a sleek, 3-tab layout (or a clean 3-column grid) titled "Three Ways to Stash":
-  - **Tab/Column 1: Desktop Extension:** (Keep the existing 8 steps for developer mode installation and the `Ctrl + Shift + K` hotkey).
+  - **Tab/Column 1: Desktop Extension:** (Keep the existing 8 steps for developer mode installation and the `Ctrl + Shift + X` hot key).
   - **Tab/Column 2: Mobile PWA (Native Feel):** 1. Open the website on your mobile browser (Safari/Chrome).
     2. Tap "Add to Home Screen" to install the PWA.
     3. Scroll Instagram, TikTok, or anywhere on your phone.
